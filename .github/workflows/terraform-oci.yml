@@ -121,7 +121,7 @@ jobs:
       - name: Generate deployment plan
         run: |
           terraform plan \
-            -var-file=dev.tfvars \
+            -var-file=terraform.tfvars \
             -input=false \
             -no-color \
             -lock-timeout=5m \

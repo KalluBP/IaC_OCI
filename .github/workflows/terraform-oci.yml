@@ -1,0 +1,255 @@
+
+name: Terraform OCI - DEV
+
+on:
+  push:
+    branches:
+      - trunk
+    paths:
+      - "bootstrap/**"
+      - ".github/workflows/terraform-oci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-oci-dev
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_VAR_region: ${{ vars.OCI_REGION }}
+
+jobs:
+
+  # ======================================================
+  # JOB 1: AUTHENTICATION, VALIDATION, SECURITY AND PLAN
+  # ======================================================
+
+  plan:
+    name: Authentication, Validation and Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: bootstrap
+
+    env:
+      OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+      OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+      OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+      OCI_REGION: ${{ vars.OCI_REGION }}
+
+      TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+      TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+      TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+      TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure OCI credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          : "${OCI_USER_OCID:?Missing OCI_USER_OCID secret}"
+          : "${OCI_TENANCY_OCID:?Missing OCI_TENANCY_OCID secret}"
+          : "${OCI_FINGERPRINT:?Missing OCI_FINGERPRINT secret}"
+          : "${OCI_PRIVATE_KEY:?Missing OCI_PRIVATE_KEY secret}"
+          : "${OCI_REGION:?Missing OCI_REGION variable}"
+
+          mkdir -p "$HOME/.oci"
+          chmod 700 "$HOME/.oci"
+
+          printf '%s\n' "$OCI_PRIVATE_KEY" \
+            > "$HOME/.oci/devops_api_key.pem"
+
+          chmod 600 "$HOME/.oci/devops_api_key.pem"
+
+          cat > "$HOME/.oci/config" <<EOF
+          [DEFAULT]
+          user=$OCI_USER_OCID
+          fingerprint=$OCI_FINGERPRINT
+          tenancy=$OCI_TENANCY_OCID
+          region=$OCI_REGION
+          key_file=$HOME/.oci/devops_api_key.pem
+          EOF
+
+          chmod 600 "$HOME/.oci/config"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install OCI CLI
+        run: |
+          python -m pip install --user oci-cli
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify OCI identity
+        run: |
+          oci iam user get \
+            --user-id "$OCI_USER_OCID" \
+            --auth api_key \
+            --output table
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.17.0"
+          terraform_wrapper: false
+
+      - name: Terraform Format
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Initialize
+        run: terraform init -input=false -lockfile=readonly
+
+      - name: Terraform Validate
+        run: terraform validate -no-color
+
+      - name: Security Scan with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: config
+          scan-ref: bootstrap
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          hide-progress: true
+
+      - name: Terraform Plan
+        run: |
+          terraform plan \
+            -input=false \
+            -no-color \
+            -lock-timeout=5m \
+            -out=tfplan
+
+      - name: Cleanup OCI credentials
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "$HOME/.oci"
+
+  # ======================================================
+  # JOB 2: MANUAL APPROVAL AND DEPLOYMENT
+  # ======================================================
+
+  apply:
+    name: Approved Deployment - DEV
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    needs:
+      - plan
+
+    environment:
+      name: dev
+
+    defaults:
+      run:
+        working-directory: bootstrap
+
+    env:
+      OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+      OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+      OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+      OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+      OCI_REGION: ${{ vars.OCI_REGION }}
+
+      TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+      TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+      TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+      TF_VAR_private_key: ${{ secrets.OCI_PRIVATE_KEY }}
+
+    steps:
+      - name: Checkout approved commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Configure OCI credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          : "${OCI_USER_OCID:?Missing OCI_USER_OCID secret}"
+          : "${OCI_TENANCY_OCID:?Missing OCI_TENANCY_OCID secret}"
+          : "${OCI_FINGERPRINT:?Missing OCI_FINGERPRINT secret}"
+          : "${OCI_PRIVATE_KEY:?Missing OCI_PRIVATE_KEY secret}"
+          : "${OCI_REGION:?Missing OCI_REGION variable}"
+
+          mkdir -p "$HOME/.oci"
+          chmod 700 "$HOME/.oci"
+
+          printf '%s\n' "$OCI_PRIVATE_KEY" \
+            > "$HOME/.oci/devops_api_key.pem"
+
+          chmod 600 "$HOME/.oci/devops_api_key.pem"
+
+          cat > "$HOME/.oci/config" <<EOF
+          [DEFAULT]
+          user=$OCI_USER_OCID
+          fingerprint=$OCI_FINGERPRINT
+          tenancy=$OCI_TENANCY_OCID
+          region=$OCI_REGION
+          key_file=$HOME/.oci/devops_api_key.pem
+          EOF
+
+          chmod 600 "$HOME/.oci/config"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install OCI CLI
+        run: |
+          python -m pip install --user oci-cli
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify OCI identity
+        run: |
+          oci iam user get \
+            --user-id "$OCI_USER_OCID" \
+            --auth api_key \
+            --output table
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.17.0"
+          terraform_wrapper: false
+
+      - name: Terraform Initialize
+        run: terraform init -input=false -lockfile=readonly
+
+      - name: Terraform Validate
+        run: terraform validate -no-color
+
+      - name: Generate deployment plan
+        run: |
+          terraform plan \
+            -input=false \
+            -no-color \
+            -lock-timeout=5m \
+            -out=tfplan
+
+      - name: Terraform Apply
+        run: terraform apply -input=false -no-color tfplan
+
+      - name: Terraform Outputs
+        run: terraform output -no-color
+
+      - name: Cleanup OCI credentials
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "$HOME/.oci"

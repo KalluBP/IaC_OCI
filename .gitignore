@@ -42,3 +42,12 @@ terraform.rc
 # Optional: ignore plan files saved before destroying Terraform configuration
 # Uncomment the line below if you want to ignore planout files.
 # planout
+
+# OCI credentials
+.oci/
+*.pem
+*.key
+
+# Local MCP configuration and secrets
+.env
+.env.*

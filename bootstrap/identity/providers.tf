@@ -1,10 +1,9 @@
-
 provider "oci" {
-  auth                = "APIKey"
-  tenancy_ocid        = var.tenancy_ocid
-  user_ocid           = var.user_ocid
-  fingerprint         = var.fingerprint
-  private_key         = var.private_key
+  auth                 = "APIKey"
+  tenancy_ocid         = var.tenancy_ocid
+  user_ocid            = var.user_ocid
+  fingerprint          = var.fingerprint
+  private_key          = var.private_key
   private_key_password = var.private_key_password
-  region              = var.region
+  region               = var.region
 }

@@ -6,7 +6,7 @@ on:
     branches:
       - trunk
     paths:
-      - "bootstrap/**"
+      - "bootstrap/identity/**"
       - ".github/workflows/terraform-oci.yml"
 
 permissions:
@@ -118,7 +118,7 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
-          scan-ref: bootstrap
+          scan-ref: bootstrap/identity
           format: table
           exit-code: "1"
           severity: HIGH,CRITICAL

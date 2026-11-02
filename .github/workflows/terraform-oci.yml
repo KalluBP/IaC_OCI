@@ -1,5 +1,5 @@
 
-name: Terraform OCI - DEV
+name: Terraform OCI
 
 on:
   push:
